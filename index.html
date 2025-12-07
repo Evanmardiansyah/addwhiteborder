@@ -3,23 +3,123 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IG Carousel Maker</title>
+    <title>Web SCRL Maker</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
     <style>
-        canvas { border: 1px solid #ccc; max-width: 100%; }
-        body { font-family: sans-serif; padding: 20px; text-align: center; }
+        body { font-family: sans-serif; background: #f0f0f0; text-align: center; padding: 20px; }
+        .canvas-container { margin: 20px auto; box-shadow: 0 0 20px rgba(0,0,0,0.1); border: 2px solid #333; }
+        .controls { margin-bottom: 20px; }
+        button, input { padding: 10px; margin: 5px; cursor: pointer; }
+        .guides { color: #666; font-size: 14px; margin-bottom: 10px; }
     </style>
 </head>
 <body>
-    <h1>Buat Carousel Instagram</h1>
-    
-    <input type="file" id="uploadImage" accept="image/*">
-    <br><br>
-    
-    <canvas id="myCanvas"></canvas>
-    <br><br>
-    
-    <button id="downloadBtn" style="display:none;">Download Hasil</button>
 
-    <script src="script.js"></script>
+    <h1>Web Carousel Maker (Ala SCRL)</h1>
+    
+    <div class="controls">
+        <input type="file" id="imgLoader" multiple accept="image/*">
+        
+        <button onclick="downloadSlices()">✂️ Potong & Download Slide</button>
+        
+        <button onclick="deleteSelected()">🗑️ Hapus Gambar Terpilih</button>
+    </div>
+
+    <div class="guides">
+        Canvas ini lebarnya 3 Slide (3240px x 1350px). Taruh gambar melewati garis bantu untuk efek nyambung!
+    </div>
+
+    <canvas id="c"></canvas>
+
+    <script>
+        // 1. Setup Canvas
+        // Kita buat canvas panjang (Panoramic). 
+        // Misal: 3 Slide Instagram Portrait (1080 x 3 = 3240px lebar, 1350px tinggi)
+        const slideWidth = 1080;
+        const slideHeight = 1350;
+        const totalSlides = 3;
+        
+        const canvas = new fabric.Canvas('c', {
+            width: slideWidth * totalSlides,
+            height: slideHeight,
+            backgroundColor: '#ffffff' 
+        });
+
+        // Agar tampilan di layar HP/Laptop muat, kita kecilkan tampilannya (zoom out) pakai CSS
+        // Tapi ukuran aslinya tetap HD.
+        document.querySelector('.canvas-container').style.transform = 'scale(0.25)'; // Zoom 25%
+        document.querySelector('.canvas-container').style.transformOrigin = 'top center';
+
+        // 2. Buat Garis Bantu (Grid) agar tau batas slide
+        // Ini visual saja, tidak akan ikut terdownload
+        for (let i = 1; i < totalSlides; i++) {
+            let line = new fabric.Line([slideWidth * i, 0, slideWidth * i, slideHeight], {
+                stroke: 'rgba(0,0,0,0.3)', // Warna abu transparan
+                strokeWidth: 5,
+                selectable: false, // Supaya garis gak bisa digeser user
+                evented: false,
+                excludeFromExport: true // Custom property penanda
+            });
+            canvas.add(line);
+        }
+
+        // 3. Fungsi Upload Gambar
+        document.getElementById('imgLoader').onchange = function(e) {
+            const files = e.target.files;
+            for (let i = 0; i < files.length; i++) {
+                const reader = new FileReader();
+                reader.onload = function(f) {
+                    fabric.Image.fromURL(f.target.result, function(img) {
+                        // Skala gambar biar ga kegedean pas masuk
+                        img.scaleToWidth(800);
+                        canvas.add(img);
+                        canvas.setActiveObject(img);
+                    });
+                };
+                reader.readAsDataURL(files[i]);
+            }
+        };
+
+        // 4. Fungsi Hapus Gambar
+        function deleteSelected() {
+            const activeObj = canvas.getActiveObject();
+            if (activeObj) canvas.remove(activeObj);
+        }
+
+        // 5. LOGIKA PEMOTONGAN (SLICING) - JANTUNGNYA APLIKASI INI
+        function downloadSlices() {
+            // Sembunyikan garis bantu dulu sebelum foto
+            canvas.getObjects().forEach(obj => {
+                if(obj.excludeFromExport) obj.visible = false;
+            });
+
+            // Loop sebanyak jumlah slide (3 kali)
+            for (let i = 0; i < totalSlides; i++) {
+                // Ambil data gambar hanya pada koordinat slide tersebut
+                const dataURL = canvas.toDataURL({
+                    left: i * slideWidth,  // Geser posisi potong (0, 1080, 2160)
+                    top: 0,
+                    width: slideWidth,     // Lebar potongan (1080)
+                    height: slideHeight,   // Tinggi potongan (1350)
+                    format: 'png',
+                    multiplier: 1 // Kualitas 1:1
+                });
+
+                // Trigger download otomatis
+                const link = document.createElement('a');
+                link.download = `slide-${i+1}.png`;
+                link.href = dataURL;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+
+            // Munculkan lagi garis bantu
+            canvas.getObjects().forEach(obj => {
+                if(obj.excludeFromExport) obj.visible = true;
+            });
+            canvas.requestRenderAll();
+        }
+    </script>
 </body>
 </html>
