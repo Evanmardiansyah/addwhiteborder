@@ -3,123 +3,242 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web SCRL Maker</title>
+    <title>Web SCRL Clone</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    
     <style>
-        body { font-family: sans-serif; background: #f0f0f0; text-align: center; padding: 20px; }
-        .canvas-container { margin: 20px auto; box-shadow: 0 0 20px rgba(0,0,0,0.1); border: 2px solid #333; }
-        .controls { margin-bottom: 20px; }
-        button, input { padding: 10px; margin: 5px; cursor: pointer; }
-        .guides { color: #666; font-size: 14px; margin-bottom: 10px; }
+        :root { --dark: #1e1e1e; --accent: #007bff; --panel: #2c2c2c; }
+        body { margin: 0; font-family: 'Poppins', sans-serif; background: var(--dark); color: white; display: flex; height: 100vh; overflow: hidden; }
+        
+        /* SIDEBAR KIRI (TOOLS) */
+        .sidebar { width: 80px; background: var(--panel); display: flex; flex-direction: column; align-items: center; padding-top: 20px; border-right: 1px solid #444; z-index: 10; }
+        .tool-btn { width: 50px; height: 50px; border-radius: 12px; border: none; background: #444; color: white; margin-bottom: 15px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 10px; transition: 0.2s; }
+        .tool-btn i { font-size: 20px; margin-bottom: 4px; }
+        .tool-btn:hover { background: var(--accent); }
+        input[type="file"] { display: none; }
+
+        /* AREA TENGAH (CANVAS) */
+        .workspace { flex-grow: 1; display: flex; justify-content: center; align-items: center; position: relative; background: #121212; overflow: auto; }
+        .canvas-wrapper { box-shadow: 0 0 50px rgba(0,0,0,0.5); transform-origin: center center; transition: transform 0.2s; }
+        
+        /* PANEL ATAS (PROPERTIES) */
+        .top-bar { position: absolute; top: 0; left: 80px; right: 0; height: 50px; background: var(--panel); display: flex; align-items: center; padding: 0 20px; justify-content: space-between; border-bottom: 1px solid #444; }
+        .property-group { display: flex; gap: 10px; align-items: center; }
+        button.action { padding: 5px 15px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; }
+        .btn-download { background: var(--accent); color: white; }
+        .btn-delete { background: #ff4757; color: white; }
+        
+        /* SLIDER ZOOM */
+        .zoom-control { position: absolute; bottom: 20px; right: 20px; background: var(--panel); padding: 10px; border-radius: 20px; display: flex; gap: 10px; }
     </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
 
-    <h1>Web Carousel Maker (Ala SCRL)</h1>
-    
-    <div class="controls">
+    <div class="sidebar">
+        <button class="tool-btn" onclick="document.getElementById('imgLoader').click()">
+            <i class="fa-solid fa-image"></i> Foto
+        </button>
         <input type="file" id="imgLoader" multiple accept="image/*">
+
+        <button class="tool-btn" onclick="addText()">
+            <i class="fa-solid fa-font"></i> Teks
+        </button>
+
+        <button class="tool-btn" onclick="toggleColorPicker()">
+            <i class="fa-solid fa-fill-drip"></i> BG
+        </button>
+        <input type="color" id="bgColorPicker" value="#ffffff" style="visibility: hidden; position: absolute;">
+
+        <div style="flex-grow: 1;"></div>
         
-        <button onclick="downloadSlices()">✂️ Potong & Download Slide</button>
-        
-        <button onclick="deleteSelected()">🗑️ Hapus Gambar Terpilih</button>
+        <button class="tool-btn" onclick="changeSlideCount(1)" title="Tambah Slide">
+            <i class="fa-solid fa-plus"></i> Slide
+        </button>
+        <button class="tool-btn" onclick="changeSlideCount(-1)" title="Kurang Slide">
+            <i class="fa-solid fa-minus"></i> Slide
+        </button>
     </div>
 
-    <div class="guides">
-        Canvas ini lebarnya 3 Slide (3240px x 1350px). Taruh gambar melewati garis bantu untuk efek nyambung!
+    <div class="top-bar">
+        <div class="property-group">
+            <span>Layers:</span>
+            <button class="action" onclick="moveLayer('up')"><i class="fa-solid fa-arrow-up"></i> Naik</button>
+            <button class="action" onclick="moveLayer('down')"><i class="fa-solid fa-arrow-down"></i> Turun</button>
+        </div>
+        <div class="property-group">
+            <button class="action btn-delete" onclick="deleteSelected()">Hapus Item</button>
+            <button class="action btn-download" onclick="downloadSlices()">EXPORT CAROUSEL</button>
+        </div>
     </div>
 
-    <canvas id="c"></canvas>
+    <div class="workspace" id="workspace">
+        <div class="canvas-wrapper" id="canvasWrapper">
+            <canvas id="c"></canvas>
+        </div>
+    </div>
+    
+    <div class="zoom-control">
+        <span style="font-size: 12px;">Zoom:</span>
+        <input type="range" min="0.1" max="1" step="0.05" value="0.2" oninput="setZoom(this.value)">
+    </div>
 
     <script>
-        // 1. Setup Canvas
-        // Kita buat canvas panjang (Panoramic). 
-        // Misal: 3 Slide Instagram Portrait (1080 x 3 = 3240px lebar, 1350px tinggi)
+        // --- KONFIGURASI AWAL ---
         const slideWidth = 1080;
-        const slideHeight = 1350;
-        const totalSlides = 3;
+        const slideHeight = 1350; // Ukuran Portrait Instagram (4:5)
+        let totalSlides = 3; // Default 3 slide
         
+        // Inisialisasi Canvas Fabric
         const canvas = new fabric.Canvas('c', {
             width: slideWidth * totalSlides,
             height: slideHeight,
-            backgroundColor: '#ffffff' 
+            backgroundColor: '#ffffff',
+            preserveObjectStacking: true // Agar layer tidak lompat saat dipilih
         });
 
-        // Agar tampilan di layar HP/Laptop muat, kita kecilkan tampilannya (zoom out) pakai CSS
-        // Tapi ukuran aslinya tetap HD.
-        document.querySelector('.canvas-container').style.transform = 'scale(0.25)'; // Zoom 25%
-        document.querySelector('.canvas-container').style.transformOrigin = 'top center';
+        // --- SISTEM GRID & GARIS BANTU ---
+        let gridLines = [];
+        
+        function updateGrid() {
+            // Hapus garis lama
+            gridLines.forEach(line => canvas.remove(line));
+            gridLines = [];
 
-        // 2. Buat Garis Bantu (Grid) agar tau batas slide
-        // Ini visual saja, tidak akan ikut terdownload
-        for (let i = 1; i < totalSlides; i++) {
-            let line = new fabric.Line([slideWidth * i, 0, slideWidth * i, slideHeight], {
-                stroke: 'rgba(0,0,0,0.3)', // Warna abu transparan
-                strokeWidth: 5,
-                selectable: false, // Supaya garis gak bisa digeser user
-                evented: false,
-                excludeFromExport: true // Custom property penanda
-            });
-            canvas.add(line);
+            // Gambar garis baru sesuai jumlah slide
+            canvas.setWidth(slideWidth * totalSlides);
+            
+            for (let i = 1; i < totalSlides; i++) {
+                let line = new fabric.Line([slideWidth * i, 0, slideWidth * i, slideHeight], {
+                    stroke: 'rgba(0,0,0,0.2)',
+                    strokeWidth: 4,
+                    selectable: false,
+                    evented: false,
+                    strokeDashArray: [10, 10], // Garis putus-putus biar estetik
+                    excludeFromExport: true
+                });
+                canvas.add(line);
+                gridLines.push(line);
+                line.sendToBack(); // Taruh paling belakang (tapi di atas background)
+            }
+            centerCanvas();
         }
+        updateGrid();
 
-        // 3. Fungsi Upload Gambar
+        // --- FITUR 1: UPLOAD GAMBAR ---
         document.getElementById('imgLoader').onchange = function(e) {
             const files = e.target.files;
             for (let i = 0; i < files.length; i++) {
                 const reader = new FileReader();
                 reader.onload = function(f) {
                     fabric.Image.fromURL(f.target.result, function(img) {
-                        // Skala gambar biar ga kegedean pas masuk
-                        img.scaleToWidth(800);
+                        img.scaleToWidth(slideWidth / 2); // Auto resize biar gak kegedean
                         canvas.add(img);
                         canvas.setActiveObject(img);
+                        img.center();
                     });
                 };
                 reader.readAsDataURL(files[i]);
             }
         };
 
-        // 4. Fungsi Hapus Gambar
+        // --- FITUR 2: TEXT EDITOR ---
+        function addText() {
+            const text = new fabric.IText('Tulis Disini', {
+                left: 100, top: 100,
+                fontFamily: 'Playfair Display',
+                fill: '#000000',
+                fontSize: 100
+            });
+            canvas.add(text);
+            canvas.setActiveObject(text);
+        }
+
+        // --- FITUR 3: BACKGROUND COLOR ---
+        function toggleColorPicker() {
+            const picker = document.getElementById('bgColorPicker');
+            picker.click();
+        }
+        document.getElementById('bgColorPicker').addEventListener('input', function(e) {
+            canvas.setBackgroundColor(e.target.value, canvas.renderAll.bind(canvas));
+        });
+
+        // --- FITUR 4: LAYER CONTROL ---
+        function moveLayer(direction) {
+            const activeObj = canvas.getActiveObject();
+            if (!activeObj) return;
+            if (direction === 'up') activeObj.bringForward();
+            else activeObj.sendBackwards();
+            canvas.renderAll();
+        }
+        
         function deleteSelected() {
             const activeObj = canvas.getActiveObject();
             if (activeObj) canvas.remove(activeObj);
         }
 
-        // 5. LOGIKA PEMOTONGAN (SLICING) - JANTUNGNYA APLIKASI INI
+        // --- FITUR 5: DYNAMIC SLIDES (TAMBAH/KURANG) ---
+        function changeSlideCount(num) {
+            if (totalSlides + num < 1) return; // Minimal 1 slide
+            if (totalSlides + num > 10) return; // Maksimal 10 slide (biar gak berat)
+            
+            totalSlides += num;
+            updateGrid();
+            // Update background color ulang karena resize mereset canvas buffer
+            canvas.setBackgroundColor(document.getElementById('bgColorPicker').value, canvas.renderAll.bind(canvas));
+        }
+
+        // --- FITUR VIEW: ZOOM & RESPONSIVE ---
+        function setZoom(val) {
+            document.getElementById('canvasWrapper').style.transform = `scale(${val})`;
+        }
+        
+        function centerCanvas() {
+            // Posisi default zoom
+            setZoom(0.2); 
+            document.querySelector('input[type="range"]').value = 0.2;
+        }
+
+        // --- CORE: EXPORT & SLICING (Mesin Utama) ---
         function downloadSlices() {
-            // Sembunyikan garis bantu dulu sebelum foto
-            canvas.getObjects().forEach(obj => {
-                if(obj.excludeFromExport) obj.visible = false;
-            });
+            // 1. Sembunyikan Grid
+            gridLines.forEach(l => l.visible = false);
+            canvas.renderAll();
 
-            // Loop sebanyak jumlah slide (3 kali)
+            // 2. Loop Slicing
             for (let i = 0; i < totalSlides; i++) {
-                // Ambil data gambar hanya pada koordinat slide tersebut
                 const dataURL = canvas.toDataURL({
-                    left: i * slideWidth,  // Geser posisi potong (0, 1080, 2160)
+                    left: i * slideWidth,
                     top: 0,
-                    width: slideWidth,     // Lebar potongan (1080)
-                    height: slideHeight,   // Tinggi potongan (1350)
+                    width: slideWidth,
+                    height: slideHeight,
                     format: 'png',
-                    multiplier: 1 // Kualitas 1:1
+                    multiplier: 1
                 });
-
-                // Trigger download otomatis
-                const link = document.createElement('a');
-                link.download = `slide-${i+1}.png`;
-                link.href = dataURL;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
+                
+                downloadImage(dataURL, `scrl-slide-${i+1}.png`);
             }
 
-            // Munculkan lagi garis bantu
-            canvas.getObjects().forEach(obj => {
-                if(obj.excludeFromExport) obj.visible = true;
-            });
-            canvas.requestRenderAll();
+            // 3. Munculkan Grid lagi
+            gridLines.forEach(l => l.visible = true);
+            canvas.renderAll();
         }
+
+        function downloadImage(data, filename) {
+            const link = document.createElement('a');
+            link.href = data;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // Keyboard Shortcut: Delete untuk hapus
+        window.addEventListener('keydown', function(e) {
+            if(e.key === 'Delete') deleteSelected();
+        });
+
     </script>
 </body>
 </html>
